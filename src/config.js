@@ -19,7 +19,7 @@ module.exports = {
 
   // OpenRouter
   OPENROUTER_BASE: 'https://openrouter.ai/api/v1',
-  AI_MODEL: 'openai/gpt-oss-120b:free',
+  AI_MODEL: 'nvidia/nemotron-3-super-120b-a12b:free',
   AI_TEMPERATURE: 0.3,
   AI_MAX_TOKENS: 4096,
 
@@ -44,4 +44,13 @@ module.exports = {
   COMMIT_TRIM_CHARS: 2000,
   REQUEST_DELAY_MS: 1000,
   REQUEST_DELAY_AUTH_MS: 200,
+
+  // Repo Evolution
+  EVO_MAX_TOTAL_REPOS: 20,
+  EVO_INACTIVE_WEEKS: 2,
+
+  // GitHub Search (fallback for OSS Insight)
+  GITHUB_SEARCH_LANGUAGES: ['Python', 'TypeScript', 'JavaScript', 'Rust'],
+  GITHUB_SEARCH_MAX_RESULTS: 30,
+  GITHUB_SEARCH_MIN_STARS: 10,
 };

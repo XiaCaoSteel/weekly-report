@@ -39,14 +39,20 @@ async function initDB() {
       repo VARCHAR(255) NOT NULL,
       default_branch VARCHAR(255) DEFAULT 'main',
       source VARCHAR(50) NOT NULL DEFAULT 'manual',
+      status VARCHAR(20) NOT NULL DEFAULT 'active',
       description TEXT,
       language VARCHAR(100),
       stars INTEGER DEFAULT 0,
+      last_active_at TIMESTAMPTZ,
       added_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(owner, repo)
     )
   `);
+
+  // Migrate existing tables — add columns if missing
+  await pool.query(`ALTER TABLE repos ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`);
+  await pool.query(`ALTER TABLE repos ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS weekly_reports (
@@ -172,10 +178,11 @@ async function addRepo(owner, repo, defaultBranch, source, description, language
     `INSERT INTO repos (owner, repo, default_branch, source, description, language, stars)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (owner, repo) DO UPDATE SET
-       source = EXCLUDED.source,
+       source = CASE WHEN repos.source = 'manual' THEN 'manual' ELSE EXCLUDED.source END,
        description = COALESCE(EXCLUDED.description, repos.description),
        language = COALESCE(EXCLUDED.language, repos.language),
        stars = COALESCE(EXCLUDED.stars, repos.stars),
+       status = 'active',
        updated_at = NOW()
      RETURNING id`,
     [owner, repo, defaultBranch, source, description, language, stars]
@@ -184,7 +191,7 @@ async function addRepo(owner, repo, defaultBranch, source, description, language
 }
 
 async function deleteRepo(id) {
-  await pool.query(`DELETE FROM repos WHERE id = $1 AND source = 'manual'`, [id]);
+  await pool.query(`DELETE FROM repos WHERE id = $1`, [id]);
 }
 
 async function deleteDiscoveredRepos() {
@@ -196,6 +203,63 @@ async function updateRepoBranch(id, branch) {
     `UPDATE repos SET default_branch = $1, updated_at = NOW() WHERE id = $2`,
     [branch, id]
   );
+}
+
+// --- Evolution ---
+
+async function getActiveRepos() {
+  const { rows } = await pool.query(
+    `SELECT * FROM repos WHERE status = 'active' ORDER BY stars DESC`
+  );
+  return rows;
+}
+
+async function getRepoCounts() {
+  const { rows } = await pool.query(
+    `SELECT source, COUNT(*)::int AS count FROM repos WHERE status = 'active' GROUP BY source`
+  );
+  const result = { manual: 0, discovered: 0 };
+  for (const row of rows) result[row.source] = row.count;
+  return result;
+}
+
+async function markReposActive(repoIds) {
+  if (!repoIds || repoIds.length === 0) return;
+  await pool.query(
+    `UPDATE repos SET status = 'active', last_active_at = NOW() WHERE id = ANY($1::int[])`,
+    [repoIds]
+  );
+}
+
+async function markReposInactive(repoIds) {
+  if (!repoIds || repoIds.length === 0) return;
+  await pool.query(
+    `UPDATE repos SET status = 'inactive', updated_at = NOW() WHERE id = ANY($1::int[]) AND source = 'manual'`,
+    [repoIds]
+  );
+}
+
+async function deleteInactiveDiscovered() {
+  const { rowCount } = await pool.query(
+    `DELETE FROM repos WHERE source = 'discovered' AND status = 'inactive'`
+  );
+  return rowCount;
+}
+
+async function getInactiveRepos(weeksThreshold) {
+  const { rows } = await pool.query(
+    `SELECT id, owner, repo, source, last_active_at, added_at FROM repos
+     WHERE status = 'active'
+       AND (
+         (last_active_at IS NOT NULL
+          AND last_active_at < NOW() - ($1 || ' weeks')::INTERVAL)
+         OR
+         (last_active_at IS NULL
+          AND added_at < NOW() - ($1 || ' weeks')::INTERVAL)
+       )`,
+    [String(weeksThreshold)]
+  );
+  return rows;
 }
 
 // --- Commits ---
@@ -250,10 +314,16 @@ module.exports = {
   getReportCommits,
   getRepos,
   getAllRepos,
+  getActiveRepos,
+  getRepoCounts,
   addRepo,
   deleteRepo,
   deleteDiscoveredRepos,
+  deleteInactiveDiscovered,
   updateRepoBranch,
+  markReposActive,
+  markReposInactive,
+  getInactiveRepos,
   insertCommits,
   saveReposnapshot,
   getPreviousSnapshot,

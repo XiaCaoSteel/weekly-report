@@ -1,5 +1,4 @@
 const express = require('express');
-const { marked } = require('marked');
 const config = require('./config');
 const db = require('./db');
 const { runReportGeneration } = require('./orchestrator');
@@ -32,14 +31,29 @@ function createApp() {
       button.danger { background: #d73a49; }
       button.danger:hover { background: #b92b38; }
       .trigger-btn { padding: 12px 24px; font-size: 16px; margin: 16px 0; }
-      .markdown-body h1, .markdown-body h2, .markdown-body h3 { margin: 16px 0 8px; }
-      .markdown-body p { margin: 8px 0; }
-      .markdown-body ul, .markdown-body ol { margin: 8px 0 8px 24px; }
-      .markdown-body li { margin: 4px 0; }
-      .markdown-body table { width: 100%; border-collapse: collapse; }
-      .markdown-body th, .markdown-body td { border: 1px solid #ddd; padding: 8px; }
-      .markdown-body hr { margin: 24px 0; border: 0; border-top: 1px solid #ddd; }
       .back-link { margin: 20px 0; display: inline-block; }
+
+      /* Report styles */
+      .section { margin: 24px 0; padding: 16px; border: 1px solid #e1e4e8; border-radius: 6px; }
+      .section h2 { margin: 0 0 16px 0; padding-bottom: 8px; border-bottom: 2px solid #0366d6; }
+      .repo-card { margin: 20px 0; padding: 16px; background: #f6f8fa; border-radius: 6px; }
+      .repo-card h3 { margin: 0 0 12px 0; }
+      .repo-card h4 { margin: 16px 0 8px 0; color: #586069; font-size: 14px; text-transform: uppercase; }
+      .repo-card ul { margin: 8px 0 8px 20px; }
+      .repo-card li { margin: 4px 0; }
+      .info-table { width: auto; min-width: 300px; }
+      .info-table th, .info-table td { padding: 4px 12px; border: 1px solid #ddd; }
+      .info-table th { background: #e1e4e8; width: 120px; }
+      .data-table { width: 100%; }
+      .data-table th, .data-table td { border: 1px solid #ddd; padding: 8px; }
+      .data-table th { background: #0366d6; color: #fff; }
+      .muted { color: #586069; font-style: italic; }
+      .ai-summary { margin: 8px 0; padding: 12px; background: #fff; border-left: 3px solid #0366d6; }
+      .ai-summary p { margin: 4px 0; }
+      .ai-summary ul, .ai-summary ol { margin: 4px 0 4px 20px; }
+      .ai-summary li { margin: 2px 0; }
+      code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+      em { color: #586069; }
     </style>
   `;
 
@@ -86,11 +100,10 @@ function createApp() {
     try {
       const report = await db.getReportById(parseInt(req.params.id));
       if (!report) return res.status(404).send(layout('Not Found', '<p>Report not found</p>'));
-      // Strip leading H1 to avoid duplicate title (layout already shows <h1>)
-      let content = report.content || '_No content_';
-      content = content.replace(/^#\s+.+?\n\n?/, '');
-      const html = marked.parse(content);
-      res.send(layout(report.title || 'Report', `<div class="markdown-body">${html}</div><a class="back-link" href="/">Back to list</a>`));
+      // Render HTML report directly — strip outer <h1> to avoid duplicate title
+      let content = report.content || '<p class="muted">No content</p>';
+      content = content.replace(/<h1>[^<]*<\/h1>/, '');
+      res.send(layout(report.title || 'Report', `${content}<a class="back-link" href="/">Back to list</a>`));
     } catch (e) {
       res.status(500).send(layout('Error', `<p>${e.message}</p>`));
     }
@@ -99,18 +112,25 @@ function createApp() {
   // Repo management
   app.get('/repos', async (req, res) => {
     try {
-      const repos = await db.getRepos('manual');
+      const repos = await db.getAllRepos();
       let rows = '';
       if (repos.length === 0) {
-        rows = '<tr><td colspan="4">No repos configured.</td></tr>';
+        rows = '<tr><td colspan="7">No repos configured.</td></tr>';
       } else {
         for (const r of repos) {
+          const lastActive = r.last_active_at
+            ? new Date(r.last_active_at).toLocaleDateString()
+            : 'never';
+          const statusClass = r.status === 'inactive' ? 'status-failed' : 'status-completed';
+          const canDelete = r.source === 'manual';
           rows += `<tr>
             <td><a href="https://github.com/${r.owner}/${r.repo}" target="_blank">${r.owner}/${r.repo}</a></td>
             <td>${r.default_branch}</td>
+            <td>${r.source}</td>
+            <td><span class="status ${statusClass}">${r.status}</span></td>
             <td>${r.description || '-'}</td>
-            <td>${new Date(r.added_at).toLocaleDateString()}</td>
-            <td><form method="post" action="/repos/${r.id}/delete" style="display:inline"><button class="danger" type="submit">Remove</button></form></td>
+            <td>${lastActive}</td>
+            <td>${canDelete ? `<form method="post" action="/repos/${r.id}/delete" style="display:inline"><button class="danger" type="submit">Remove</button></form>` : '<em>auto</em>'}</td>
           </tr>`;
         }
       }
@@ -122,9 +142,9 @@ function createApp() {
           <input name="repo" placeholder="repo (e.g. react)" required>
           <button type="submit">Add</button>
         </form>
-        <h2>Manual Repos</h2>
+        <h2>All Repos</h2>
         <table>
-          <thead><tr><th>Repo</th><th>Branch</th><th>Description</th><th>Added</th><th></th></tr></thead>
+          <thead><tr><th>Repo</th><th>Branch</th><th>Source</th><th>Status</th><th>Description</th><th>Last Active</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       `;

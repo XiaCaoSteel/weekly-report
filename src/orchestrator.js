@@ -1,5 +1,5 @@
 const db = require('./db');
-const { discoverTrendingRepos } = require('./ossinsight');
+const { evolveRepoList } = require('./repo-evolution');
 const { fetchAllCommits, fetchAllRepoMetadata, fetchRepoIssues, trimForAI } = require('./github-fetcher');
 const { summarizeCommits, parseAISummary } = require('./ai-summarizer');
 const { generateReport } = require('./report-generator');
@@ -24,22 +24,27 @@ async function runReportGeneration() {
   }
 
   try {
-    // Step 1: Discover trending repos
-    console.log('[orchestrator] Discovering trending repos...');
-    const trending = await discoverTrendingRepos();
+    // Step 1: Evolve repo list — prune inactive, fill with trending
+    console.log('[orchestrator] Evolving repo list...');
+    const evoResult = await evolveRepoList();
 
-    await db.deleteDiscoveredRepos();
-    for (const r of trending) {
-      await db.addRepo(r.owner, r.repo, 'main', 'discovered', r.description, r.language, r.stars);
-    }
-
-    // Step 2: Get all repos
-    const allRepos = await db.getAllRepos();
-    console.log(`[orchestrator] Total repos: ${allRepos.length}`);
+    // Step 2: Get active repos
+    const allRepos = await db.getActiveRepos();
+    console.log(`[orchestrator] Active repos: ${allRepos.length} (+${evoResult.added} -${evoResult.removed})`);
 
     // Step 3: Fetch commits
     console.log('[orchestrator] Fetching commits...');
     const commitsByRepo = await fetchAllCommits(allRepos, sinceISO);
+
+    // Step 3.5: Mark repos with commits as active
+    const activeRepoIds = [];
+    for (const [repoId, commits] of commitsByRepo) {
+      if (commits.length > 0) activeRepoIds.push(repoId);
+    }
+    if (activeRepoIds.length > 0) {
+      await db.markReposActive(activeRepoIds);
+      console.log(`[orchestrator] Marked ${activeRepoIds.length} repos as active`);
+    }
 
     // Step 4: Flatten commits for DB
     const allCommits = [];
@@ -60,7 +65,7 @@ async function runReportGeneration() {
     const repoMetadata = await fetchAllRepoMetadata(allRepos, commitsByRepo);
 
     const repoActivity = new Map();
-    const today = we; // YYYY-MM-DD
+    const today = we;
 
     for (const repo of allRepos) {
       const commits = commitsByRepo.get(repo.id);
@@ -106,19 +111,19 @@ async function runReportGeneration() {
 
     // Step 7: Generate markdown
     console.log('[orchestrator] Generating report...');
-    const { filePath, markdown } = generateReport({
+    const { filePath, html } = generateReport({
       weekStart: ws, weekEnd: we,
       aiSummary: aiRaw,
       parsedSummary,
-      repos: allRepos, commitsByRepo, discoveredRepos: trending,
+      repos: allRepos, commitsByRepo, discoveredRepos: [],
       repoMetadata, repoActivity,
     });
 
     // Step 8: Update record
     await db.updateReport(reportId, {
       week_start: ws, week_end: we, file_path: filePath,
-      title: `AI/LLM Weekly Report: ${ws} ~ ${we}`,
-      summary: parsedSummary.overview || aiRaw, content: markdown,
+      title: `GitHub Weekly Report: ${ws} ~ ${we}`,
+      summary: parsedSummary.overview || aiRaw, content: html,
       commit_count: totalCommits,
       repo_count: [...commitsByRepo.values()].filter(c => c.length > 0).length,
       status: 'completed', completed_at: new Date().toISOString(),
