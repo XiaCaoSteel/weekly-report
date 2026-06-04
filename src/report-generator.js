@@ -17,7 +17,7 @@ function formatDate(isoStr) {
 
 // ── shared data prep ──
 
-function buildReportData({ weekStart, weekEnd, aiSummary, parsedSummary, repos, commitsByRepo, discoveredRepos, repoMetadata, repoActivity }) {
+function buildReportData({ weekStart, weekEnd, aiSummary, parsedSummary, repos, commitsByRepo, discoveredRepos, repoMetadata, repoActivity, trends }) {
   // Use parsed overview. Never use raw AI output — if it were valid the parser would have extracted it.
   const overviewText = parsedSummary?.overview || '';
 
@@ -60,13 +60,13 @@ function buildReportData({ weekStart, weekEnd, aiSummary, parsedSummary, repos, 
   const discoveredCount = repos.filter(r => r.source === 'discovered').length;
   const reposWithCommits = [...commitsByRepo.values()].filter(c => c.length > 0).length;
 
-  return { weekStart, weekEnd, overviewText, fallbackOverview, repoRows, hasHighlights, totalCommits, manualRepos, discoveredCount, reposWithCommits, discoveredRepos: discoveredRepos || [] };
+  return { weekStart, weekEnd, overviewText, fallbackOverview, repoRows, hasHighlights, totalCommits, manualRepos, discoveredCount, reposWithCommits, discoveredRepos: discoveredRepos || [], trends };
 }
 
 // ── HTML ──
 
 function buildHTML(data) {
-  const { weekStart, weekEnd, overviewText, fallbackOverview, repoRows, hasHighlights, totalCommits, manualRepos, discoveredCount, reposWithCommits, discoveredRepos } = data;
+  const { weekStart, weekEnd, overviewText, fallbackOverview, repoRows, hasHighlights, totalCommits, manualRepos, discoveredCount, reposWithCommits, discoveredRepos, trends } = data;
   let h = '';
 
   h += `<h1>GitHub Weekly Report: ${esc(weekStart)} ~ ${esc(weekEnd)}</h1>\n`;
@@ -139,6 +139,11 @@ function buildHTML(data) {
     h += `</tbody></table>\n</div>\n`;
   }
 
+  // Trends
+  if (trends) {
+    h += buildTrendsHTML(trends);
+  }
+
   // Statistics
   h += `<div class="section stats">\n<h2>Statistics</h2>\n<ul>\n`;
   h += `<li>Repos tracked: ${manualRepos + discoveredCount} (${manualRepos} manual + ${discoveredCount} discovered)</li>\n`;
@@ -154,7 +159,7 @@ function buildHTML(data) {
 // ── Markdown ──
 
 function buildMarkdown(data) {
-  const { weekStart, weekEnd, overviewText, fallbackOverview, repoRows, hasHighlights, totalCommits, manualRepos, discoveredCount, reposWithCommits, discoveredRepos } = data;
+  const { weekStart, weekEnd, overviewText, fallbackOverview, repoRows, hasHighlights, totalCommits, manualRepos, discoveredCount, reposWithCommits, discoveredRepos, trends } = data;
   let md = '';
 
   md += `# GitHub Weekly Report: ${weekStart} ~ ${weekEnd}\n\n`;
@@ -225,6 +230,11 @@ function buildMarkdown(data) {
     md += '\n---\n\n';
   }
 
+  // Trends
+  if (trends) {
+    md += buildTrendsMD(trends);
+  }
+
   // Statistics
   md += `## Statistics\n\n`;
   md += `- Repos tracked: ${manualRepos + discoveredCount} (${manualRepos} manual + ${discoveredCount} discovered)\n`;
@@ -239,7 +249,7 @@ function buildMarkdown(data) {
 // ── Word (.doc) — HTML-based, opens in Word/WPS/LibreOffice ──
 
 function buildDoc(data) {
-  const { weekStart, weekEnd, overviewText, fallbackOverview, repoRows, hasHighlights, totalCommits, manualRepos, discoveredCount, reposWithCommits, discoveredRepos } = data;
+  const { weekStart, weekEnd, overviewText, fallbackOverview, repoRows, hasHighlights, totalCommits, manualRepos, discoveredCount, reposWithCommits, discoveredRepos, trends } = data;
 
   let d = '';
   // Word-compatible HTML header
@@ -316,6 +326,11 @@ function buildDoc(data) {
     d += `</tbody></table>\n<hr>\n`;
   }
 
+  // Trends
+  if (trends) {
+    d += buildTrendsDoc(trends);
+  }
+
   // Statistics
   d += `<h2>Statistics</h2>\n<ul>\n`;
   d += `<li>Repos tracked: ${manualRepos + discoveredCount} (${manualRepos} manual + ${discoveredCount} discovered)</li>\n`;
@@ -326,6 +341,146 @@ function buildDoc(data) {
   d += `</ul>\n`;
 
   d += `</body></html>\n`;
+  return d;
+}
+
+// ── Trends section ──
+
+function buildTrendsHTML(t) {
+  let h = '';
+  h += `<div class="section trends">\n<h2>趋势 / 行业维度</h2>\n`;
+
+  // Star growth
+  h += `<h3>🌟 Trending — Star 增速 Top 10</h3>\n`;
+  h += `<table class="data-table"><thead><tr><th>Repository</th><th>Stars</th><th>+本周</th><th>Language</th></tr></thead><tbody>\n`;
+  for (const r of t.starGrowth) {
+    h += `<tr><td><a href="https://github.com/${esc(r.owner)}/${esc(r.repo)}">${esc(r.owner)}/${esc(r.repo)}</a></td><td>${r.stars.toLocaleString()}</td><td>${r.delta != null ? '+' + r.delta : 'N/A'}</td><td>${esc(r.language)}</td></tr>\n`;
+  }
+  h += `</tbody></table>\n`;
+
+  // Commit velocity
+  h += `<h3>⚡ Commit 活跃度 Top 10</h3>\n`;
+  h += `<table class="data-table"><thead><tr><th>Repository</th><th>Commits</th><th>Language</th></tr></thead><tbody>\n`;
+  for (const r of t.commitVelocity) {
+    h += `<tr><td><a href="https://github.com/${esc(r.owner)}/${esc(r.repo)}">${esc(r.owner)}/${esc(r.repo)}</a></td><td>${r.commits}</td><td>${esc(r.language)}</td></tr>\n`;
+  }
+  h += `</tbody></table>\n`;
+
+  // Active developers
+  h += `<h3>👨‍💻 活跃开发者 Top 10</h3>\n`;
+  h += `<table class="data-table"><thead><tr><th>Author</th><th>Commits</th><th>Repos</th><th>Languages</th></tr></thead><tbody>\n`;
+  for (const a of t.authors) {
+    h += `<tr><td>${esc(a.name)}</td><td>${a.commits}</td><td>${a.repos}</td><td>${esc(a.langs.join(', '))}</td></tr>\n`;
+  }
+  h += `</tbody></table>\n`;
+
+  // Hot languages
+  h += `<h3>📊 热门技术栈</h3>\n<ul>\n`;
+  for (const l of t.languages) {
+    h += `<li>${esc(l.lang)} — ${l.count} commits</li>\n`;
+  }
+  h += `</ul>\n`;
+
+  // Keyword monitoring
+  h += `<h3>🔑 关键词监控</h3>\n`;
+  for (const [cat, repos] of Object.entries(t.keywordHits)) {
+    if (repos.length === 0) continue;
+    h += `<h4>${esc(cat)}</h4>\n<ul>\n`;
+    for (const r of repos) {
+      h += `<li><a href="https://github.com/${esc(r.owner)}/${esc(r.repo)}">${esc(r.owner)}/${esc(r.repo)}</a> — ${r.commits} commits [${esc(r.matched.join(', '))}]</li>\n`;
+    }
+    h += `</ul>\n`;
+  }
+
+  h += `</div>\n`;
+  return h;
+}
+
+function buildTrendsMD(t) {
+  let md = '';
+  md += `## 趋势 / 行业维度\n\n`;
+
+  md += `### 🌟 Trending — Star 增速 Top 10\n\n`;
+  md += `| Repository | Stars | +本周 | Language |\n|---|---|---|---|\n`;
+  for (const r of t.starGrowth) {
+    md += `| [${r.owner}/${r.repo}](https://github.com/${r.owner}/${r.repo}) | ${r.stars.toLocaleString()} | ${r.delta != null ? '+' + r.delta : 'N/A'} | ${r.language} |\n`;
+  }
+  md += '\n';
+
+  md += `### ⚡ Commit 活跃度 Top 10\n\n`;
+  md += `| Repository | Commits | Language |\n|---|---|---|\n`;
+  for (const r of t.commitVelocity) {
+    md += `| [${r.owner}/${r.repo}](https://github.com/${r.owner}/${r.repo}) | ${r.commits} | ${r.language} |\n`;
+  }
+  md += '\n';
+
+  md += `### 👨‍💻 活跃开发者 Top 10\n\n`;
+  md += `| Author | Commits | Repos | Languages |\n|---|---|---|---|\n`;
+  for (const a of t.authors) {
+    md += `| ${a.name} | ${a.commits} | ${a.repos} | ${a.langs.join(', ')} |\n`;
+  }
+  md += '\n';
+
+  md += `### 📊 热门技术栈\n\n`;
+  for (const l of t.languages) {
+    md += `- ${l.lang} — ${l.count} commits\n`;
+  }
+  md += '\n';
+
+  md += `### 🔑 关键词监控\n\n`;
+  for (const [cat, repos] of Object.entries(t.keywordHits)) {
+    if (repos.length === 0) continue;
+    md += `#### ${cat}\n\n`;
+    for (const r of repos) {
+      md += `- [${r.owner}/${r.repo}](https://github.com/${r.owner}/${r.repo}) — ${r.commits} commits [${r.matched.join(', ')}]\n`;
+    }
+    md += '\n';
+  }
+  md += `---\n\n`;
+  return md;
+}
+
+function buildTrendsDoc(t) {
+  let d = '';
+  d += `<h2>趋势 / 行业维度</h2>\n`;
+
+  d += `<h3>🌟 Trending — Star 增速 Top 10</h3>\n`;
+  d += `<table><thead><tr><th>Repository</th><th>Stars</th><th>+本周</th><th>Language</th></tr></thead><tbody>\n`;
+  for (const r of t.starGrowth) {
+    d += `<tr><td>${esc(r.owner)}/${esc(r.repo)}</td><td>${r.stars.toLocaleString()}</td><td>${r.delta != null ? '+' + r.delta : 'N/A'}</td><td>${esc(r.language)}</td></tr>\n`;
+  }
+  d += `</tbody></table>\n`;
+
+  d += `<h3>⚡ Commit 活跃度 Top 10</h3>\n`;
+  d += `<table><thead><tr><th>Repository</th><th>Commits</th><th>Language</th></tr></thead><tbody>\n`;
+  for (const r of t.commitVelocity) {
+    d += `<tr><td>${esc(r.owner)}/${esc(r.repo)}</td><td>${r.commits}</td><td>${esc(r.language)}</td></tr>\n`;
+  }
+  d += `</tbody></table>\n`;
+
+  d += `<h3>👨‍💻 活跃开发者 Top 10</h3>\n`;
+  d += `<table><thead><tr><th>Author</th><th>Commits</th><th>Repos</th><th>Languages</th></tr></thead><tbody>\n`;
+  for (const a of t.authors) {
+    d += `<tr><td>${esc(a.name)}</td><td>${a.commits}</td><td>${a.repos}</td><td>${esc(a.langs.join(', '))}</td></tr>\n`;
+  }
+  d += `</tbody></table>\n`;
+
+  d += `<h3>📊 热门技术栈</h3>\n<ul>\n`;
+  for (const l of t.languages) {
+    d += `<li>${esc(l.lang)} — ${l.count} commits</li>\n`;
+  }
+  d += `</ul>\n`;
+
+  d += `<h3>🔑 关键词监控</h3>\n`;
+  for (const [cat, repos] of Object.entries(t.keywordHits)) {
+    if (repos.length === 0) continue;
+    d += `<h4>${esc(cat)}</h4>\n<ul>\n`;
+    for (const r of repos) {
+      d += `<li>${esc(r.owner)}/${esc(r.repo)} — ${r.commits} commits [${esc(r.matched.join(', '))}]</li>\n`;
+    }
+    d += `</ul>\n`;
+  }
+  d += `<hr>\n`;
   return d;
 }
 

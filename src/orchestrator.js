@@ -2,6 +2,7 @@ const db = require('./db');
 const { evolveRepoList } = require('./repo-evolution');
 const { fetchAllCommits, fetchAllRepoMetadata, fetchRepoIssues, trimForAI } = require('./github-fetcher');
 const { summarizeCommits, parseAISummary } = require('./ai-summarizer');
+const { computeTrends } = require('./trends');
 const { generateReport } = require('./report-generator');
 
 async function runReportGeneration(formats) {
@@ -109,14 +110,18 @@ async function runReportGeneration(formats) {
     const aiRaw = commitText ? await summarizeCommits(commitText, ws, we) : null;
     const parsedSummary = parseAISummary(aiRaw);
 
-    // Step 7: Generate markdown
+    // Step 6.5: Compute trends
+    console.log('[orchestrator] Computing trends...');
+    const trends = computeTrends({ repos: allRepos, commitsByRepo, repoActivity, repoMetadata });
+
+    // Step 7: Generate report
     console.log('[orchestrator] Generating report...');
     const { filePath, html } = generateReport({
       weekStart: ws, weekEnd: we,
       aiSummary: aiRaw,
       parsedSummary,
       repos: allRepos, commitsByRepo, discoveredRepos: [],
-      repoMetadata, repoActivity,
+      repoMetadata, repoActivity, trends,
       formats,
     });
 
