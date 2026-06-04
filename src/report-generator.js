@@ -268,16 +268,16 @@ function buildDoc(data) {
     const { repo, commits, meta, activity, aiBullets, topics } = r;
     d += `<h3>${esc(repo.owner)}/${esc(repo.repo)}</h3>\n`;
     d += `<h4>项目简介</h4>\n<p>${esc(meta.description || repo.description || '暂无简介')}</p>\n`;
-    d += `<h4>基础信息</h4>\n<table><thead><tr><th>属性</th><th>值</th></tr></thead><tbody>\n`;
-    d += `<tr><td>⭐ Stars</td><td>${(meta.stars ?? '-').toLocaleString()}</td></tr>\n`;
-    d += `<tr><td>🍴 Forks</td><td>${(meta.forks ?? '-').toLocaleString()}</td></tr>\n`;
-    d += `<tr><td>👀 Watchers</td><td>${(meta.watchers ?? '-').toLocaleString()}</td></tr>\n`;
-    d += `<tr><td>🔤 Language</td><td>${esc(meta.language || repo.language || '-')}</td></tr>\n`;
-    d += `<tr><td>📜 License</td><td>${esc(meta.license || '-')}</td></tr>\n`;
-    d += `<tr><td>📅 Created</td><td>${formatDate(meta.created_at)}</td></tr>\n`;
-    d += `<tr><td>🔄 Updated</td><td>${formatDate(meta.updated_at)}</td></tr>\n`;
-    d += `<tr><td>🏷️ Topics</td><td>${esc(topics)}</td></tr>\n`;
-    d += `</tbody></table>\n`;
+    d += `<h4>基础信息</h4>\n<ul>\n`;
+    d += `<li>⭐ Stars: ${(meta.stars ?? '-').toLocaleString()}</li>\n`;
+    d += `<li>🍴 Forks: ${(meta.forks ?? '-').toLocaleString()}</li>\n`;
+    d += `<li>👀 Watchers: ${(meta.watchers ?? '-').toLocaleString()}</li>\n`;
+    d += `<li>🔤 Language: ${esc(meta.language || repo.language || '-')}</li>\n`;
+    d += `<li>📜 License: ${esc(meta.license || '-')}</li>\n`;
+    d += `<li>📅 Created: ${formatDate(meta.created_at)}</li>\n`;
+    d += `<li>🔄 Updated: ${formatDate(meta.updated_at)}</li>\n`;
+    d += `<li>🏷️ Topics: ${esc(topics)}</li>\n`;
+    d += `</ul>\n`;
 
     const starDelta = activity.starDelta, forkDelta = activity.forkDelta;
     const starStr = starDelta != null ? `+${starDelta}` : 'N/A';
