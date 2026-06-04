@@ -18,7 +18,8 @@ function formatDate(isoStr) {
 // ── shared data prep ──
 
 function buildReportData({ weekStart, weekEnd, aiSummary, parsedSummary, repos, commitsByRepo, discoveredRepos, repoMetadata, repoActivity }) {
-  const overviewText = parsedSummary?.overview || aiSummary || '';
+  // Use parsed overview. Never use raw AI output — if it were valid the parser would have extracted it.
+  const overviewText = parsedSummary?.overview || '';
 
   // Fallback summary
   let fallbackOverview = '';

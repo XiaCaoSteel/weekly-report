@@ -91,12 +91,42 @@ async function summarizeCommits(commitText, weekStart, weekEnd) {
 function parseAISummary(rawText) {
   if (!rawText) return { overview: '', repoSummaries: new Map() };
 
+  // Strip English reasoning preamble — nemotron outputs chain-of-thought before the actual summary.
+  // Find the last occurrence of the OVERVIEW marker, which is the real summary start.
+  const overviewMarker = rawText.match(/^#{2,3}\s*(?:OVERVIEW|概览)\s*$/m);
+  if (overviewMarker) {
+    const idx = overviewMarker.index;
+    if (idx > 0 && (rawText.slice(0, idx).split('\n').filter(Boolean).length > 3)) {
+      const pre = rawText.slice(0, idx);
+      // Only strip if preamble looks like reasoning (mostly English, contains reasoning words)
+      const enCount = (pre.match(/[a-zA-Z]/g) || []).length;
+      const chCount = (pre.match(/[一-鿿]/g) || []).length;
+      if (enCount > chCount * 2 || /\b(we are given|let me|steps?[:.]|let's|i need|break down)/i.test(pre)) {
+        rawText = rawText.slice(idx);
+        console.log('[ai] Stripped reasoning preamble, keeping summary');
+      }
+    }
+  } else if (/\b(we are given|let me explain|steps?[:.]|i need to)/i.test(rawText.slice(0, 500))) {
+    // No OVERVIEW marker at all, and text starts with reasoning — likely full reasoning output
+    console.warn('[ai] Output appears to be reasoning only, treating as empty');
+    return { overview: '', repoSummaries: new Map() };
+  }
+
   let overview = '';
   const repoSummaries = new Map();
 
-  // Try to extract OVERVIEW block (accept ## or ###, English or Chinese header)
-  const overviewMatch = rawText.match(/#{2,3}\s*(?:OVERVIEW|概览)\s*\n([\s\S]*?)(?=#{2,3}\s*(?:REPO:|[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)|$)/i);
+  // Extract OVERVIEW block (accept ## or ###, English or Chinese header)
+  const overviewMatch = rawText.match(/#{2,3}\s*(?:OVERVIEW|概览)\s*\n([\s\S]*?)(?=#{2,3}\s*(?:REPO:|[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)|#{2,3}\s*(?:统计|STATS|$)|$)/i);
   overview = overviewMatch ? overviewMatch[1].trim() : '';
+
+  // Verify overview isn't just English reasoning
+  if (overview) {
+    const chCount = (overview.match(/[一-鿿]/g) || []).length;
+    const enCount = (overview.match(/[a-zA-Z]/g) || []).length;
+    if (chCount === 0 && enCount > 50 && /\b(we|steps|let's)\b/i.test(overview.slice(0, 100))) {
+      overview = ''; // reasoning text, discard
+    }
+  }
 
   // Extract each REPO: owner/repo block (accept ## or ###)
   let repoPattern = /#{2,3}\s*REPO:\s*(\S+)\s*\n([\s\S]*?)(?=#{2,3}\s*(?:REPO:|\S+\/[a-zA-Z0-9_.-]+)|$)/gi;
