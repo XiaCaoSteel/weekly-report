@@ -39,6 +39,9 @@ module.exports = {
   // Scheduling
   CRON_EXPRESSION: '0 14 * * 6',
 
+  // Output (may be overridden via CLI --format)
+  OUTPUT_FORMATS: ['html', 'md', 'doc'],
+
   // Limits
   COMMIT_PER_PAGE: 30,
   COMMIT_TRIM_CHARS: 2000,

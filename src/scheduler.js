@@ -6,7 +6,7 @@ function startScheduler() {
   cron.schedule(config.CRON_EXPRESSION, async () => {
     console.log('[scheduler] Triggered weekly report generation');
     try {
-      const result = await runReportGeneration();
+      const result = await runReportGeneration(config.OUTPUT_FORMATS);
       if (result) {
         console.log(`[scheduler] Report: ${result.filePath}`);
       }

@@ -236,24 +236,126 @@ function buildMarkdown(data) {
   return md;
 }
 
+// ── Word (.doc) — HTML-based, opens in Word/WPS/LibreOffice ──
+
+function buildDoc(data) {
+  const { weekStart, weekEnd, overviewText, fallbackOverview, repoRows, hasHighlights, totalCommits, manualRepos, discoveredCount, reposWithCommits, discoveredRepos } = data;
+
+  let d = '';
+  // Word-compatible HTML header
+  d += `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">\n`;
+  d += `<head><meta charset="utf-8">\n`;
+  d += `<style>@page { size: A4; margin: 2cm; } body { font-family: 'SimSun', sans-serif; font-size: 12pt; line-height: 1.6; color: #222; } h1 { font-size: 18pt; } h2 { font-size: 14pt; border-bottom: 1px solid #999; padding-bottom: 4pt; } h3 { font-size: 12pt; } h4 { font-size: 11pt; color: #555; } table { border-collapse: collapse; width: 100%; margin: 8pt 0; } th, td { border: 1px solid #999; padding: 4pt 8pt; } th { background: #e1e4e8; } ul { margin: 4pt 0 4pt 20pt; } li { margin: 2pt 0; } code { background: #f0f0f0; padding: 1pt 4pt; font-size: 10pt; } em { color: #666; } .muted { color: #999; } hr { border: 0; border-top: 1px solid #ccc; margin: 16pt 0; }</style>\n`;
+  d += `</head><body>\n`;
+
+  d += `<h1>GitHub Weekly Report: ${esc(weekStart)} ~ ${esc(weekEnd)}</h1>\n`;
+
+  // Overview
+  d += `<h2>Overview</h2>\n`;
+  if (overviewText) {
+    d += `<div>${renderAI(overviewText)}</div>\n`;
+  } else {
+    d += `<p>${esc(fallbackOverview)}</p>\n`;
+  }
+  d += `<hr>\n`;
+
+  // Repo Highlights
+  d += `<h2>Repo Highlights</h2>\n`;
+  if (!hasHighlights) {
+    d += `<p class="muted">No repos with new commits this week.</p>\n`;
+  }
+  for (const r of repoRows) {
+    const { repo, commits, meta, activity, aiBullets, topics } = r;
+    d += `<h3>${esc(repo.owner)}/${esc(repo.repo)}</h3>\n`;
+    d += `<h4>项目简介</h4>\n<p>${esc(meta.description || repo.description || '暂无简介')}</p>\n`;
+    d += `<h4>基础信息</h4>\n<table><thead><tr><th>属性</th><th>值</th></tr></thead><tbody>\n`;
+    d += `<tr><td>⭐ Stars</td><td>${(meta.stars ?? '-').toLocaleString()}</td></tr>\n`;
+    d += `<tr><td>🍴 Forks</td><td>${(meta.forks ?? '-').toLocaleString()}</td></tr>\n`;
+    d += `<tr><td>👀 Watchers</td><td>${(meta.watchers ?? '-').toLocaleString()}</td></tr>\n`;
+    d += `<tr><td>🔤 Language</td><td>${esc(meta.language || repo.language || '-')}</td></tr>\n`;
+    d += `<tr><td>📜 License</td><td>${esc(meta.license || '-')}</td></tr>\n`;
+    d += `<tr><td>📅 Created</td><td>${formatDate(meta.created_at)}</td></tr>\n`;
+    d += `<tr><td>🔄 Updated</td><td>${formatDate(meta.updated_at)}</td></tr>\n`;
+    d += `<tr><td>🏷️ Topics</td><td>${esc(topics)}</td></tr>\n`;
+    d += `</tbody></table>\n`;
+
+    const starDelta = activity.starDelta, forkDelta = activity.forkDelta;
+    const starStr = starDelta != null ? `+${starDelta}` : 'N/A';
+    const forkStr = forkDelta != null ? `+${forkDelta}` : 'N/A';
+    d += `<h4>活动</h4>\n<ul>\n`;
+    d += `<li>⭐ Star 增长（本周）: ${starStr}</li>\n`;
+    d += `<li>🍴 Fork 增长（本周）: ${forkStr}</li>\n`;
+    d += `<li>📝 Commits（本周）: ${commits.length} 次</li>\n`;
+    d += `<li>🐛 Issues（本周）: ${activity.issuesCreated ?? '-'} 新增 / ${activity.issuesClosed ?? '-'} 关闭</li>\n`;
+    d += `</ul>\n`;
+
+    if (aiBullets) {
+      d += `<h4>概述</h4>\n<div>${renderAI(aiBullets)}</div>\n`;
+    }
+    d += `<hr>\n`;
+  }
+
+  // Tracked Repositories
+  d += `<h2>Tracked Repositories</h2>\n`;
+  for (const { repo, commits } of repoRows) {
+    d += `<h3>${esc(repo.owner)}/${esc(repo.repo)}</h3>\n<ul>\n`;
+    for (const c of commits) {
+      const dt = c.committed_at ? new Date(c.committed_at).toISOString().slice(0, 10) : '';
+      d += `<li><code>${esc(c.sha.slice(0, 7))}</code> ${esc(c.message)} — <em>${esc(c.author)}${dt ? ', ' + dt : ''}</em></li>\n`;
+    }
+    d += `</ul>\n`;
+  }
+  d += `<hr>\n`;
+
+  // Discovered
+  if (discoveredRepos.length > 0) {
+    d += `<h2>Newly Discovered Trending Repos</h2>\n<table><thead><tr><th>Repository</th><th>Stars</th><th>Language</th><th>Description</th></tr></thead><tbody>\n`;
+    for (const r of discoveredRepos) {
+      d += `<tr><td>${esc(r.owner)}/${esc(r.repo)}</td><td>+${r.stars}</td><td>${esc(r.language || '-')}</td><td>${esc(r.description || '-')}</td></tr>\n`;
+    }
+    d += `</tbody></table>\n<hr>\n`;
+  }
+
+  // Statistics
+  d += `<h2>Statistics</h2>\n<ul>\n`;
+  d += `<li>Repos tracked: ${manualRepos + discoveredCount} (${manualRepos} manual + ${discoveredCount} discovered)</li>\n`;
+  d += `<li>Repos with new commits: ${reposWithCommits}</li>\n`;
+  d += `<li>Commits analyzed: ${totalCommits}</li>\n`;
+  d += `<li>New trending repos discovered: ${discoveredRepos.length}</li>\n`;
+  d += `<li>Generated: ${new Date().toISOString()}</li>\n`;
+  d += `</ul>\n`;
+
+  d += `</body></html>\n`;
+  return d;
+}
+
 // ── Main entry ──
 
 function generateReport(opts) {
+  const formats = opts.formats || config.OUTPUT_FORMATS; // ['html','md','doc']
   const data = buildReportData(opts);
-
-  const html = buildHTML(data);
-  const md = buildMarkdown(data);
-
   const baseName = `${data.weekEnd}_weekly_report`;
-  const htmlPath = `${config.REPORT_DIR}/${baseName}.html`;
-  const mdPath = `${config.REPORT_DIR}/${baseName}.md`;
+  const result = { filePath: null, html: null };
 
-  fs.writeFileSync(htmlPath, html, 'utf-8');
-  fs.writeFileSync(mdPath, md, 'utf-8');
-  console.log(`[report] Written: ${htmlPath}`);
-  console.log(`[report] Written: ${mdPath}`);
+  const builders = {
+    html: { ext: '.html', fn: buildHTML },
+    md:   { ext: '.md',   fn: buildMarkdown },
+    doc:  { ext: '.doc',  fn: buildDoc },
+  };
 
-  return { filePath: htmlPath, mdPath, html };
+  for (const fmt of formats) {
+    const b = builders[fmt];
+    if (!b) { console.warn(`[report] Unknown format: ${fmt}`); continue; }
+    const content = b.fn(data);
+    const path = `${config.REPORT_DIR}/${baseName}${b.ext}`;
+    fs.writeFileSync(path, content, 'utf-8');
+    console.log(`[report] Written: ${path}`);
+    if (fmt === 'html') { result.filePath = path; result.html = content; }
+    if (fmt === 'md')   { result.mdPath = path; }
+    if (fmt === 'doc')  { result.docPath = path; }
+  }
+
+  return result;
 }
 
 // ── AI markdown → HTML helpers ──

@@ -185,7 +185,7 @@ function createApp() {
     res.send(layout('Generating...', '<p>Report generation started. <a href="/">Back to list</a> to check progress.</p>'));
     // Run async after responding
     setTimeout(() => {
-      runReportGeneration().catch(e => console.error('[trigger] Error:', e.message));
+      runReportGeneration(config.OUTPUT_FORMATS).catch(e => console.error('[trigger] Error:', e.message));
     }, 100);
   });
 

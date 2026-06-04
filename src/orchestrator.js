@@ -4,7 +4,7 @@ const { fetchAllCommits, fetchAllRepoMetadata, fetchRepoIssues, trimForAI } = re
 const { summarizeCommits, parseAISummary } = require('./ai-summarizer');
 const { generateReport } = require('./report-generator');
 
-async function runReportGeneration() {
+async function runReportGeneration(formats) {
   const weekEnd = new Date();
   const weekStart = new Date(weekEnd);
   weekStart.setDate(weekStart.getDate() - 7);
@@ -117,6 +117,7 @@ async function runReportGeneration() {
       parsedSummary,
       repos: allRepos, commitsByRepo, discoveredRepos: [],
       repoMetadata, repoActivity,
+      formats,
     });
 
     // Step 8: Update record
