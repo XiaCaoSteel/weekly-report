@@ -381,13 +381,25 @@ function buildTrendsHTML(t) {
   }
   h += `</ul>\n`;
 
-  // Keyword monitoring
-  h += `<h3>🔑 关键词监控</h3>\n`;
-  for (const [cat, repos] of Object.entries(t.keywordHits)) {
-    if (repos.length === 0) continue;
-    h += `<h4>${esc(cat)}</h4>\n<ul>\n`;
-    for (const r of repos) {
-      h += `<li><a href="https://github.com/${esc(r.owner)}/${esc(r.repo)}">${esc(r.owner)}/${esc(r.repo)}</a> — ${r.commits} commits [${esc(r.matched.join(', '))}]</li>\n`;
+  // Hot Keywords summary
+  h += `<h3>🔑 关键词热度</h3>\n`;
+  h += `<p>本周共扫描 <strong>${t.hotKeywords.length}</strong> 个活跃关键词，覆盖 <strong>${t.repoKeywords.size}</strong> 个仓库。</p>\n`;
+  h += `<p>`;
+  for (const k of t.hotKeywords.slice(0, 12)) {
+    h += `<span style="display:inline-block;margin:2px 4px;padding:2px 8px;background:#e8f0fe;border-radius:10px;font-size:13px">${esc(k.keyword)} <span style="color:#0366d6">${k.commits}</span></span>`;
+  }
+  h += `</p>\n`;
+
+  // Per-category breakdown
+  h += `<h3>📋 分领域动态</h3>\n`;
+  for (const [cat, data] of Object.entries(t.keywordByCategory)) {
+    h += `<h4>${esc(cat)} — ${data.totalCommits} commits across ${data.totalRepos} repos</h4>\n`;
+    h += `<p>热点: ${data.topKeywords.map(k => `<code>${esc(k)}</code>`).join(' ')}</p>\n`;
+    h += `<ul>\n`;
+    for (const d of data.details.slice(0, 5)) {
+      h += `<li><strong>${esc(d.keyword)}</strong> — ${d.commits} commits, ${d.repos} repos`;
+      if (d.sample) h += ` <br><em class="muted">e.g. ${esc(d.sample)}</em>`;
+      h += `</li>\n`;
     }
     h += `</ul>\n`;
   }
@@ -427,12 +439,20 @@ function buildTrendsMD(t) {
   }
   md += '\n';
 
-  md += `### 🔑 关键词监控\n\n`;
-  for (const [cat, repos] of Object.entries(t.keywordHits)) {
-    if (repos.length === 0) continue;
-    md += `#### ${cat}\n\n`;
-    for (const r of repos) {
-      md += `- [${r.owner}/${r.repo}](https://github.com/${r.owner}/${r.repo}) — ${r.commits} commits [${r.matched.join(', ')}]\n`;
+  // Hot Keywords
+  md += `### 🔑 关键词热度\n\n`;
+  md += `本周共扫描 **${t.hotKeywords.length}** 个活跃关键词，覆盖 **${t.repoKeywords.size}** 个仓库。\n\n`;
+  md += `**Top:** ${t.hotKeywords.slice(0, 12).map(k => `\`${k.keyword}\`(${k.commits})`).join(' ')}\n\n`;
+
+  // Per category
+  md += `### 📋 分领域动态\n\n`;
+  for (const [cat, data] of Object.entries(t.keywordByCategory)) {
+    md += `#### ${cat} — ${data.totalCommits} commits / ${data.totalRepos} repos\n\n`;
+    md += `> ${data.topKeywords.map(k => `\`${k}\``).join(', ')}\n\n`;
+    for (const d of data.details.slice(0, 5)) {
+      md += `- **${d.keyword}**: ${d.commits} commits, ${d.repos} repos`;
+      if (d.sample) md += `  \n  _e.g. ${d.sample}_`;
+      md += '\n';
     }
     md += '\n';
   }
@@ -471,12 +491,23 @@ function buildTrendsDoc(t) {
   }
   d += `</ul>\n`;
 
-  d += `<h3>🔑 关键词监控</h3>\n`;
-  for (const [cat, repos] of Object.entries(t.keywordHits)) {
-    if (repos.length === 0) continue;
-    d += `<h4>${esc(cat)}</h4>\n<ul>\n`;
-    for (const r of repos) {
-      d += `<li>${esc(r.owner)}/${esc(r.repo)} — ${r.commits} commits [${esc(r.matched.join(', '))}]</li>\n`;
+  d += `<h3>🔑 关键词热度</h3>\n`;
+  d += `<p>本周共扫描 <strong>${t.hotKeywords.length}</strong> 个活跃关键词，覆盖 <strong>${t.repoKeywords.size}</strong> 个仓库。</p>\n`;
+  d += `<p>`;
+  for (const k of t.hotKeywords.slice(0, 12)) {
+    d += `<span style="display:inline-block;margin:2px 4px;padding:2px 8px;background:#e8f0fe;border-radius:10px;font-size:13px">${esc(k.keyword)} ${k.commits}</span>`;
+  }
+  d += `</p>\n`;
+
+  d += `<h3>📋 分领域动态</h3>\n`;
+  for (const [cat, data] of Object.entries(t.keywordByCategory)) {
+    d += `<h4>${esc(cat)} — ${data.totalCommits} commits / ${data.totalRepos} repos</h4>\n`;
+    d += `<p>${data.topKeywords.map(k => esc(k)).join(', ')}</p>\n`;
+    d += `<ul>\n`;
+    for (const d2 of data.details.slice(0, 5)) {
+      d += `<li><strong>${esc(d2.keyword)}</strong>: ${d2.commits} commits, ${d2.repos} repos`;
+      if (d2.sample) d += ` <em>e.g. ${esc(d2.sample)}</em>`;
+      d += `</li>\n`;
     }
     d += `</ul>\n`;
   }
