@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs');
+const { marked } = require('marked');
 const config = require('./config');
 const db = require('./db');
 const { runReportGeneration } = require('./orchestrator');
@@ -54,6 +56,14 @@ function createApp() {
       .ai-summary li { margin: 2px 0; }
       code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
       em { color: #586069; }
+      .markdown-body h1, .markdown-body h2, .markdown-body h3 { margin: 16px 0 8px; }
+      .markdown-body p { margin: 8px 0; }
+      .markdown-body ul, .markdown-body ol { margin: 8px 0 8px 24px; }
+      .markdown-body li { margin: 4px 0; }
+      .markdown-body table { width: 100%; border-collapse: collapse; }
+      .markdown-body th, .markdown-body td { border: 1px solid #ddd; padding: 8px; }
+      .markdown-body hr { margin: 24px 0; border: 0; border-top: 1px solid #ddd; }
+      .markdown-body strong { font-weight: 600; }
     </style>
   `;
 
@@ -82,14 +92,34 @@ function createApp() {
         }
       }
 
+      // Skill reports from disk
+      const skillFiles = fs.readdirSync(config.REPORT_DIR)
+        .filter(f => f.startsWith('skills-') && f.endsWith('.md'))
+        .sort().reverse();
+      let skillRows = '';
+      if (skillFiles.length === 0) {
+        skillRows = '<tr><td colspan="2">No skill reports yet.</td></tr>';
+      } else {
+        const extractDate = f => { const m = f.match(/skills-(.+?)_weekly/); return m ? m[1] : f; };
+        for (const f of skillFiles) {
+          skillRows += `<tr><td><a href="/skills/${encodeURIComponent(f)}">Skill Report</a></td><td>${extractDate(f)}</td></tr>`;
+        }
+      }
+
       const html = `
-        <form method="post" action="/trigger"><button class="trigger-btn" type="submit">Generate Report Now</button></form>
+        <form method="post" action="/trigger"><button class="trigger-btn" type="submit">Generate GitHub Report</button></form>
+        <h2>GitHub Reports</h2>
         <table>
           <thead><tr><th>Period</th><th>Repos</th><th>Commits</th><th>Status</th><th>Created</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
+        <h2>Skill Reports</h2>
+        <table>
+          <thead><tr><th>Report</th><th>Date</th></tr></thead>
+          <tbody>${skillRows}</tbody>
+        </table>
       `;
-      res.send(layout('Weekly Reports', html));
+      res.send(layout('Reports', html));
     } catch (e) {
       res.status(500).send(layout('Error', `<p>${e.message}</p>`));
     }
@@ -175,6 +205,19 @@ function createApp() {
     try {
       await db.deleteRepo(parseInt(req.params.id));
       res.redirect('/repos');
+    } catch (e) {
+      res.status(500).send(layout('Error', `<p>${e.message}</p>`));
+    }
+  });
+
+  // Skill report view
+  app.get('/skills/:file', (req, res) => {
+    try {
+      const filePath = `${config.REPORT_DIR}/${decodeURIComponent(req.params.file)}`;
+      if (!fs.existsSync(filePath)) return res.status(404).send(layout('Not Found', '<p>File not found</p>'));
+      const md = fs.readFileSync(filePath, 'utf-8');
+      const html = marked.parse(md);
+      res.send(layout('Skill Report', `<div class="markdown-body">${html}</div><a class="back-link" href="/">Back to list</a>`));
     } catch (e) {
       res.status(500).send(layout('Error', `<p>${e.message}</p>`));
     }
