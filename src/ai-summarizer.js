@@ -1,5 +1,4 @@
 const config = require('./config');
-
 const SYSTEM_PROMPT = [
   'You are a technical report writer specializing in AI/LLM open-source projects.',
   'Summarize the following weekly git commit data. You MUST respond in Chinese (简体中文).',
@@ -22,32 +21,15 @@ const SYSTEM_PROMPT = [
 ].join('\n');
 
 async function summarizeCommits(commitText, weekStart, weekEnd) {
-  const horizonEnvPath = '/root/.claude/projects/Horizon/.env';
-  const envVars = {};
-  try {
-    const fs = require('fs');
-    const envContent = fs.readFileSync(horizonEnvPath, 'utf-8');
-    for (const line of envContent.split('\n')) {
-      const eq = line.indexOf('=');
-      if (eq > 0 && !line.trim().startsWith('#')) {
-        const key = line.slice(0, eq).trim();
-        const val = line.slice(eq + 1).trim();
-        envVars[key] = val;
-      }
-    }
-  } catch (e) {
-    console.warn('[ai] Cannot read Horizon .env:', e.message);
-    return null;
-  }
-
-  const apiKey = envVars.OPENAI_API_KEY;
+  // ========== 修复：改为读取 OPENROUTER_API_KEY ==========
+  const apiKey = process.env.OPENAI_API_KEY;
+  console.log('[ai] apiKey loaded, length:', apiKey ? apiKey.length : 0);
   if (!apiKey || apiKey === 'sk-ant-xxx') {
     console.warn('[ai] No valid OpenRouter API key found');
     return null;
   }
-
   const userPrompt = `Report period: ${weekStart} to ${weekEnd}\n\n${commitText}`;
-
+  console.log('[ai] Starting AI call, model:', config.AI_MODEL, 'commitText length:', commitText.length);
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const res = await fetch(`${config.OPENROUTER_BASE}/chat/completions`, {
@@ -68,29 +50,28 @@ async function summarizeCommits(commitText, weekStart, weekEnd) {
           ],
         }),
       });
-
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
         console.warn(`[ai] OpenRouter HTTP ${res.status}: ${errText.slice(0, 200)}`);
         if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
         continue;
       }
-
       const data = await res.json();
-      return data.choices?.[0]?.message?.content || null;
+      const content = data.choices?.[0]?.message?.content || null;
+      console.log('[ai] AI raw response preview:', content ? content.slice(0,400) : 'EMPTY');
+      return content;
     } catch (e) {
       console.warn(`[ai] Request error (attempt ${attempt}): ${e.message}`);
       if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
     }
   }
-
   return null;
 }
 
 // Parse structured AI output into overview + per-repo summaries
 function parseAISummary(rawText) {
+  console.log('[ai] parseAISummary rawText preview:', rawText ? rawText.slice(0,400) : 'NULL');
   if (!rawText) return { overview: '', repoSummaries: new Map() };
-
   // Strip English reasoning preamble — nemotron outputs chain-of-thought before the actual summary.
   // Find the last occurrence of the OVERVIEW marker, which is the real summary start.
   const overviewMarker = rawText.match(/^#{2,3}\s*(?:OVERVIEW|概览)\s*$/m);
@@ -111,14 +92,11 @@ function parseAISummary(rawText) {
     console.warn('[ai] Output appears to be reasoning only, treating as empty');
     return { overview: '', repoSummaries: new Map() };
   }
-
   let overview = '';
   const repoSummaries = new Map();
-
   // Extract OVERVIEW block (accept ## or ###, English or Chinese header)
   const overviewMatch = rawText.match(/#{2,3}\s*(?:OVERVIEW|概览)\s*\n([\s\S]*?)(?=#{2,3}\s*(?:REPO:|[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)|#{2,3}\s*(?:统计|STATS|$)|$)/i);
   overview = overviewMatch ? overviewMatch[1].trim() : '';
-
   // Verify overview isn't just English reasoning
   if (overview) {
     const chCount = (overview.match(/[一-鿿]/g) || []).length;
@@ -127,14 +105,12 @@ function parseAISummary(rawText) {
       overview = ''; // reasoning text, discard
     }
   }
-
   // Extract each REPO: owner/repo block (accept ## or ###)
   let repoPattern = /#{2,3}\s*REPO:\s*(\S+)\s*\n([\s\S]*?)(?=#{2,3}\s*(?:REPO:|\S+\/[a-zA-Z0-9_.-]+)|$)/gi;
   let match;
   while ((match = repoPattern.exec(rawText)) !== null) {
     repoSummaries.set(match[1].trim(), match[2].trim());
   }
-
   // Fallback: if no REPO: prefix found, try matching ### owner/repo patterns
   if (repoSummaries.size === 0) {
     const fallbackPattern = /#{2,3}\s+([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)\s*\n([\s\S]*?)(?=#{2,3}\s+(?:[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)|#{2,3}\s*(?:统计|STATS|$)|$)/gi;
@@ -145,12 +121,10 @@ function parseAISummary(rawText) {
       }
     }
   }
-
   // Final fallback: if no structured output detected, treat entire text as overview
   if (repoSummaries.size === 0 && overview.length === 0) {
     return { overview: rawText.trim(), repoSummaries: new Map() };
   }
-
   // If overview is empty but we have repos, try to get overview from text before first repo
   if (!overview && repoSummaries.size > 0) {
     const firstRepoIdx = rawText.search(/#{2,3}\s*\S+\/[a-zA-Z0-9_.-]+/);
@@ -160,8 +134,7 @@ function parseAISummary(rawText) {
       overview = preText.replace(/^#{1,3}\s+\S.*\n?/gm, '').trim();
     }
   }
-
-  console.log(`[ai] Parsed summary: overview + ${repoSummaries.size} repo summaries`);
+  console.log(`[ai] Parsed summary: overview=${overview.length} chars, ${repoSummaries.size} repo summaries`);
   return { overview, repoSummaries };
 }
 

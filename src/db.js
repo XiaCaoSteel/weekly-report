@@ -305,6 +305,11 @@ async function getPreviousSnapshot(repoId, beforeDate) {
   return rows[0] || null;
 }
 
+async function listAllRepoFullNames() {
+  const res = await pool.query('SELECT owner || \'/\' || repo AS fullname FROM repos');
+  return res.rows.map(r => r.fullname);
+}
+
 module.exports = {
   initDB,
   createReport,
@@ -327,4 +332,5 @@ module.exports = {
   insertCommits,
   saveReposnapshot,
   getPreviousSnapshot,
+  listAllRepoFullNames,
 };

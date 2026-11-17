@@ -19,7 +19,7 @@ module.exports = {
 
   // OpenRouter
   OPENROUTER_BASE: 'https://openrouter.ai/api/v1',
-  AI_MODEL: 'nvidia/nemotron-3-super-120b-a12b:free',
+  AI_MODEL: 'dots-studio/dots-3-note-preview:free',
   AI_TEMPERATURE: 0.3,
   AI_MAX_TOKENS: 4096,
 
@@ -31,9 +31,9 @@ module.exports = {
   // Keywords for trending repo filtering
   AI_KEYWORDS: [
     'ai', 'llm', 'machine-learning', 'deep-learning', 'gpt', 'transformer',
-    'rag', 'agent', 'langchain', 'embedding', 'vector', 'neural',
-    'diffusion', 'text-to-image', 'stable-diffusion', 'whisper',
-    'open-source', 'chatgpt', 'copilot', 'coding-assistant',
+    'inference', 'agent', 'fine-tune', 'embedding', 'vector', 'mcp',
+    'vision', 'text-to-image', 'stable-diffusion', 'speech',
+    'open-source', 'multimodal', 'rsi', 'coding-assistant',
   ],
 
   // Scheduling
